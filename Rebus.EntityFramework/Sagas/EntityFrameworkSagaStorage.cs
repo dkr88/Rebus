@@ -13,6 +13,7 @@ namespace Rebus.Persistence.EntityFramework.Sagas
     {
         private readonly Func<DbContext> _contextFactory;
         private readonly Dictionary<ISagaData, DbContext> _contexts;
+        private readonly object _contextsLock = new object();
 
         private static ILog Log;
 
@@ -96,18 +97,24 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         /// <returns></returns>
         private DbContext RememberContext(ISagaData sagaData, DbContext context)
         {
-            _contexts.Add(sagaData, context);
-            Log.Debug("DbContext remembered [{0} saved contexts]", _contexts.Count);
-
-            // When the current message transaction ends, the DbContext should be disposed
-            MessageContext.Current.TransactionContext.OnDisposed(() =>
+            lock (_contextsLock)
             {
-                _contexts.Remove(sagaData);
-                context.Dispose();
-                Log.Debug("DbContext disposed [{0} saved contexts]", _contexts.Count);
-            });
+                _contexts.Add(sagaData, context);
+                Log.Debug("DbContext remembered [{0} saved contexts]", _contexts.Count);
 
-            return context;
+                // When the current message transaction ends, the DbContext should be disposed
+                MessageContext.Current.TransactionContext.OnDisposed(() =>
+                {
+                    lock (_contextsLock)
+                    {
+                        _contexts.Remove(sagaData);
+                        context.Dispose();
+                        Log.Debug("DbContext disposed [{0} saved contexts]", _contexts.Count);
+                    }
+                });
+
+                return context;
+            }
         }
 
         /// <summary>
@@ -117,12 +124,15 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         /// <returns></returns>
         private DbContext GetContext(ISagaData sagaData)
         {
-            if (!_contexts.ContainsKey(sagaData))
+            lock (_contextsLock)
             {
-                Log.Debug("DbContext cache miss");
-                return null;
+                if (!_contexts.ContainsKey(sagaData))
+                {
+                    Log.Debug("DbContext cache miss");
+                    return null;
+                }
+                return _contexts[sagaData];
             }
-            return _contexts[sagaData];
         }
 
         /// <summary>
@@ -134,15 +144,18 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         /// <returns></returns>
         private DbContext GetOrCreateContext(ISagaData sagaData, bool attachModified = false)
         {
-            var context = GetContext(sagaData);
-            if (context == null)
+            lock (_contextsLock)
             {
-                context = RememberContext(sagaData, _contextFactory());
-                if (attachModified)
-                    context.Entry(sagaData).State = EntityState.Modified;
-                Log.Debug("DbContext created");
+                var context = GetContext(sagaData);
+                if (context == null)
+                {
+                    context = RememberContext(sagaData, _contextFactory());
+                    if (attachModified)
+                        context.Entry(sagaData).State = EntityState.Modified;
+                    Log.Debug("DbContext created");
+                }
+                return context;
             }
-            return context;
         }
 
         /// <summary>
