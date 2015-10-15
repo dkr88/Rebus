@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Core.Objects;
+using System.Data.Entity.Infrastructure;
+using System.Data.Entity.Validation;
 using System.Linq;
 using System.Threading.Tasks;
 using Rebus.Logging;
@@ -12,8 +15,8 @@ namespace Rebus.Persistence.EntityFramework.Sagas
     public class EntityFrameworkSagaStorage : ISagaStorage
     {
         private readonly Func<DbContext> _contextFactory;
-        private readonly Dictionary<ISagaData, DbContext> _contexts;
-        private readonly object _contextsLock = new object();
+        private static readonly Dictionary<ISagaData, DbContext> _contexts = new Dictionary<ISagaData, DbContext>();
+        private static readonly object _contextsLock = new object();
 
         private static ILog Log;
 
@@ -25,7 +28,6 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         public EntityFrameworkSagaStorage(Func<DbContext> contextFactory)
         {
             _contextFactory = contextFactory;
-            _contexts = new Dictionary<ISagaData, DbContext>();
 
             RebusLoggerFactory.Changed += f => Log = f.GetCurrentClassLogger();
 
@@ -38,7 +40,7 @@ namespace Rebus.Persistence.EntityFramework.Sagas
             var context = _contextFactory();
             try
             {
-                var entitySet = GetSet(sagaDataType, context);
+                var entitySet = GetDbSet(sagaDataType, context);
                 var results = await entitySet
                     .SqlQuery("SELECT * FROM [" + sagaDataType.Name + "] WHERE [" + propertyName + "] = @p0", propertyValue)
                     .ToListAsync();
@@ -57,14 +59,38 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         public async Task Insert(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
         {
             var context = GetOrCreateContext(sagaData);
-            GetSet(sagaData.GetType(), context)
-                .Add(sagaData);
-            await context.SaveChangesAsync();
+            try
+            {
+                GetDbSet(sagaData.GetType(), context)
+                    .Add(sagaData);
+                await context.SaveChangesAsync();
+            }
+            catch (DbEntityValidationException ex)
+            {
+                LogValidationErrors(ex);
+                throw;
+            }
         }
 
         public async Task Update(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
         {
-            await GetOrCreateContext(sagaData, true).SaveChangesAsync();
+            try
+            {
+                await GetOrCreateContext(sagaData, true).SaveChangesAsync();
+            }
+            catch (DbEntityValidationException ex)
+            {
+                LogValidationErrors(ex);
+                throw;
+            }
+        }
+
+        private void LogValidationErrors(DbEntityValidationException ex)
+        {
+            foreach (var error in ex.EntityValidationErrors.SelectMany(e => e.ValidationErrors))
+            {
+                Log.Error("DbValidationError {0} / {1}", error.PropertyName, error.ErrorMessage);
+            }
         }
 
         public async Task Delete(ISagaData sagaData)
@@ -78,7 +104,7 @@ namespace Rebus.Persistence.EntityFramework.Sagas
             }
             try
             {
-                GetSet(sagaData.GetType(), context).Remove(sagaData);
+                GetDbSet(sagaData.GetType(), context).Remove(sagaData);
                 await context.SaveChangesAsync();
             }
             finally
@@ -122,7 +148,7 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         /// </summary>
         /// <param name="sagaData"></param>
         /// <returns></returns>
-        private DbContext GetContext(ISagaData sagaData)
+        public static DbContext GetContext(ISagaData sagaData)
         {
             lock (_contextsLock)
             {
@@ -132,6 +158,22 @@ namespace Rebus.Persistence.EntityFramework.Sagas
                     return null;
                 }
                 return _contexts[sagaData];
+            }
+        }
+
+        /// <summary>
+        /// Load changes for the specified objects from the data source, maintaining any local changes
+        /// </summary>
+        /// <param name="sagaData"></param>
+        /// <param name="objectsToRefresh"></param>
+        /// <returns></returns>
+        public static async Task RefreshEntities(ISagaData sagaData, IEnumerable<object> objectsToRefresh)
+        {
+            var context = ((IObjectContextAdapter)GetContext(sagaData)).ObjectContext;
+            if (context != null)
+            {
+                context.DetectChanges();
+                await context.RefreshAsync(RefreshMode.ClientWins, objectsToRefresh);
             }
         }
 
@@ -164,7 +206,7 @@ namespace Rebus.Persistence.EntityFramework.Sagas
         /// <param name="type"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        private DbSet GetSet(Type type, DbContext context)
+        private DbSet GetDbSet(Type type, DbContext context)
         {
             return context.Set(type);
         }
