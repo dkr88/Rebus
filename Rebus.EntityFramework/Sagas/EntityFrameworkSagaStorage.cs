@@ -40,20 +40,35 @@ namespace Rebus.Persistence.EntityFramework.Sagas
             var context = _contextFactory();
             try
             {
-                var entitySet = GetDbSet(sagaDataType, context);
-                var results = await entitySet
-                    .SqlQuery("SELECT * FROM [" + sagaDataType.Name + "] WHERE [" + propertyName + "] = @p0", propertyValue)
-                    .ToListAsync();
-                var sagaData = results.FirstOrDefault() as ISagaData;
-                if (sagaData != null)
-                    RememberContext(sagaData, context);
-                return sagaData;
+                // Get the PK with a select from the data table
+                var dataShim = await context.Database
+                    .SqlQuery<SagaDataStub>("SELECT [Id] FROM [" + sagaDataType.Name + "] WHERE [" + propertyName + "] = @p0", propertyValue)
+                    .SingleOrDefaultAsync();
+
+                if (dataShim != null)
+                {
+                    // Retrieve the actual saga data entity
+                    var sagaData = await GetDbSet(sagaDataType, context).FindAsync(dataShim.Id) as ISagaData;
+                    if (sagaData != null)
+                    {
+                        RememberContext(sagaData, context);
+                        return sagaData;
+                    }
+                }
+
+                context.Dispose();
+                return null;
             }
             catch
             {
                 context.Dispose();
                 throw;
             }
+        }
+
+        private sealed class SagaDataStub
+        {
+            public Guid Id { get; set; }
         }
 
         public async Task Insert(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
