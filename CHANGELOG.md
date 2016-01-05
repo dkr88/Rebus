@@ -678,6 +678,40 @@
 
 * Added ability to mark saga data as unchanged by calling `MarkAsUnchanged()` on the saga handler.
 
+## 0.99.0
+
+* Inject loggers. Will remove static logging things later.
+* Allow for enabling partitioning with Azure Service Bus transports
+* Changed Azure Service Bus transports to use streams as the message body to avoid silly XML-wrapping - thanks [meyce]
+* Updated WindowsAzure.ServiceBus dependency to 3.0.4
+* Updated WindowsAzure.Storage dependency to 6.0.0
+
+## 0.99.1
+
+* Added Serilog log event enricher + configuration extension for including Rebus' correlation ID in log events
+* Added custom NLog layout renderer that outputs the correlation ID of the message currently being handled in the `${rebus-correlation-id}` variable
+
+# 0.99.2
+
+* Fixed NLog nuget dependency
+
+# 0.99.3
+
+* Access to more useful information on `Failed<TMessage>`
+
+# 0.99.4
+
+* Added no-inlining jit directive to the Windsor package's `AutoRegisterHandlersFromThisAssembly` method because it looks like handlers are sometimes not picked up as they should
+
+# 0.99.5
+
+* Replaced Windsor's assembly-scanning with manual scan
+
+# 0.99.6
+
+* Set correlation ID, content type, and label properties on brokered messages with Azure Service Bus transport
+
+
 [AndreaCuneo]: https://github.com/AndreaCuneo
 [arneeiri]: https://github.com/arneeiri
 [bchavez]: https://github.com/bchavez
@@ -694,6 +728,7 @@
 [maeserichar]: https://github.com/maeserichar
 [maxx1337]: https://github.com/maxx1337
 [mclausen]: https://github.com/mclausen
+[meyce]: https://github.com/Meyce
 [mgayeski]: https://github.com/mgayeski
 [mgibas]: https://github.com/mgibas
 [MrMDavidson]: https://github.com/MrMDavidson

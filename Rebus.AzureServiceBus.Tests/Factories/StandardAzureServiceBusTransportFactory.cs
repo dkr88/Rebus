@@ -5,6 +5,7 @@ using System.IO;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using Rebus.Extensions;
+using Rebus.Logging;
 using Rebus.Tests.Contracts.Transports;
 using Rebus.Transport;
 
@@ -65,7 +66,7 @@ namespace Rebus.AzureServiceBus.Tests.Factories
         {
             if (inputQueueAddress == null)
             {
-                var transport = new AzureServiceBusTransport(ConnectionString, null);
+                var transport = new AzureServiceBusTransport(ConnectionString, null, new ConsoleLoggerFactory(false));
 
                 transport.Initialize();
 
@@ -74,7 +75,7 @@ namespace Rebus.AzureServiceBus.Tests.Factories
 
             return _queuesToDelete.GetOrAdd(inputQueueAddress, () =>
             {
-                var transport = new AzureServiceBusTransport(ConnectionString, inputQueueAddress);
+                var transport = new AzureServiceBusTransport(ConnectionString, inputQueueAddress, new ConsoleLoggerFactory(false));
 
                 transport.PurgeInputQueue();
 
@@ -86,17 +87,26 @@ namespace Rebus.AzureServiceBus.Tests.Factories
 
         public void CleanUp()
         {
+            _queuesToDelete.Keys.ForEach(DeleteQueue);
+        }
+
+        public static void DeleteQueue(string queueName)
+        {
             var namespaceManager = NamespaceManager.CreateFromConnectionString(ConnectionString);
 
-            _queuesToDelete.Keys.ForEach(queueName =>
+            if (!namespaceManager.QueueExists(queueName)) return;
+
+            Console.Write("Deleting ASB queue {0}...", queueName);
+
+            try
             {
-                if (!namespaceManager.QueueExists(queueName)) return;
-
-                Console.WriteLine("Deleting ASB queue {0}", queueName);
-
                 namespaceManager.DeleteQueue(queueName);
-            });
-        }
+                Console.WriteLine("OK!");
+            }
+            catch (MessagingEntityNotFoundException)
+            {
+                Console.WriteLine("OK (was not there)");   
+            }        }
 
         public static void DeleteTopic(string topic)
         {

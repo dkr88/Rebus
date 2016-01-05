@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Castle.MicroKernel.Registration;
 using Castle.MicroKernel.Registration.Lifestyle;
 using Castle.Windsor;
@@ -31,6 +34,7 @@ namespace Rebus.CastleWindsor
         /// <summary>
         /// Automatically picks up all handler types from the calling assembly and registers them in the container
         /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public static IWindsorContainer AutoRegisterHandlersFromThisAssembly(this IWindsorContainer container)
         {
             if (container == null) throw new ArgumentNullException("container");
@@ -63,19 +67,52 @@ namespace Rebus.CastleWindsor
             return RegisterAssembly(container, assemblyToRegister);
         }
 
+        /// <summary>
+        /// Registers the given handler type under the implemented handler interfaces
+        /// </summary>
+        public static IWindsorContainer RegisterHandler<THandler>(this IWindsorContainer container) where THandler : IHandleMessages
+        {
+            RegisterType(container, typeof(THandler), false);
+            return container;
+        }
+
         static IWindsorContainer RegisterAssembly(IWindsorContainer container, Assembly assemblyToRegister)
         {
-            return container
-                .Register(
-                    Classes.FromAssembly(assemblyToRegister)
-                        .BasedOn<IHandleMessages>()
-                        .WithServiceAllInterfaces()
-                        .LifestyleTransient()
-                        .Configure(c =>
-                        {
-                            c.Named(string.Format("{0} (auto-registered)", c.Implementation.FullName));
-                        })
+            var typesToAutoRegister = assemblyToRegister.GetTypes()
+                .Where(type => !type.IsInterface && !type.IsAbstract)
+                .Select(type => new
+                {
+                    Type = type,
+                    ImplementedHandlerInterfaces = GetImplementedHandlerInterfaces(type).ToList()
+                })
+                .Where(a => a.ImplementedHandlerInterfaces.Any());
+
+            foreach (var type in typesToAutoRegister)
+            {
+                RegisterType(container, type.Type, true);
+            }
+
+            return container;
+        }
+
+        static void RegisterType(IWindsorContainer container, Type typeToRegister, bool auto)
+        {
+            var implementedHandlerInterfaces = GetImplementedHandlerInterfaces(typeToRegister).ToArray();
+
+            if (!implementedHandlerInterfaces.Any()) return;
+
+            container.Register(
+                Component.For(implementedHandlerInterfaces)
+                    .ImplementedBy(typeToRegister)
+                    .LifestyleTransient()
+                    .Named(string.Format("{0} ({1})", typeToRegister.FullName, auto ? "auto-registered" : "manually registered"))
                 );
+        }
+
+        static IEnumerable<Type> GetImplementedHandlerInterfaces(Type type)
+        {
+            return type.GetInterfaces()
+                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof (IHandleMessages<>));
         }
     }
 }

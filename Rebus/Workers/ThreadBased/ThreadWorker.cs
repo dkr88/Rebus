@@ -15,13 +15,6 @@ namespace Rebus.Workers.ThreadBased
     /// </summary>
     public class ThreadWorker : IWorker
     {
-        static ILog _log;
-
-        static ThreadWorker()
-        {
-            RebusLoggerFactory.Changed += f => _log = f.GetCurrentClassLogger();
-        }
-
         readonly ThreadWorkerSynchronizationContext _threadWorkerSynchronizationContext;
         readonly IBackoffStrategy _backoffStrategy;
         readonly ITransport _transport;
@@ -30,14 +23,16 @@ namespace Rebus.Workers.ThreadBased
         readonly IPipelineInvoker _pipelineInvoker;
         readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         readonly ParallelOperationsManager _parallelOperationsManager;
+        readonly ILog _log;
 
         volatile bool _keepWorking = true;
         bool _disposed;
 
-        internal ThreadWorker(ITransport transport, IPipeline pipeline, IPipelineInvoker pipelineInvoker, string workerName, ThreadWorkerSynchronizationContext threadWorkerSynchronizationContext, ParallelOperationsManager parallelOperationsManager, IBackoffStrategy backoffStrategy)
+        internal ThreadWorker(ITransport transport, IPipeline pipeline, IPipelineInvoker pipelineInvoker, string workerName, ThreadWorkerSynchronizationContext threadWorkerSynchronizationContext, ParallelOperationsManager parallelOperationsManager, IBackoffStrategy backoffStrategy, IRebusLoggerFactory rebusLoggerFactory)
         {
             Name = workerName;
 
+            _log = rebusLoggerFactory.GetCurrentClassLogger();
             _transport = transport;
             _pipeline = pipeline;
             _pipelineInvoker = pipelineInvoker;
@@ -151,8 +146,15 @@ namespace Rebus.Workers.ThreadBased
                         var stagedReceiveSteps = _pipeline.ReceivePipeline();
                         
                         await _pipelineInvoker.Invoke(context, stagedReceiveSteps);
-                        
-                        await transactionContext.Complete();
+
+                        try
+                        {
+                            await transactionContext.Complete();
+                        }
+                        catch (Exception exception)
+                        {
+                            _log.Error(exception, "An error occurred when attempting to complete the transaction context");
+                        }
                     }
                     catch (Exception exception)
                     {
