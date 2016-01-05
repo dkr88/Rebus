@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Rebus.Extensions;
 using Rebus.Logging;
+using Rebus.Messages;
 using Rebus.Pipeline;
 using Rebus.Threading;
 using Rebus.Time;
@@ -15,13 +17,6 @@ namespace Rebus.Workers.ThreadBased
     /// </summary>
     public class ThreadWorker : IWorker
     {
-        static ILog _log;
-
-        static ThreadWorker()
-        {
-            RebusLoggerFactory.Changed += f => _log = f.GetCurrentClassLogger();
-        }
-
         readonly ThreadWorkerSynchronizationContext _threadWorkerSynchronizationContext;
         readonly IBackoffStrategy _backoffStrategy;
         readonly ITransport _transport;
@@ -30,14 +25,16 @@ namespace Rebus.Workers.ThreadBased
         readonly IPipelineInvoker _pipelineInvoker;
         readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         readonly ParallelOperationsManager _parallelOperationsManager;
+        readonly ILog _log;
 
         volatile bool _keepWorking = true;
         bool _disposed;
 
-        internal ThreadWorker(ITransport transport, IPipeline pipeline, IPipelineInvoker pipelineInvoker, string workerName, ThreadWorkerSynchronizationContext threadWorkerSynchronizationContext, ParallelOperationsManager parallelOperationsManager, IBackoffStrategy backoffStrategy)
+        internal ThreadWorker(ITransport transport, IPipeline pipeline, IPipelineInvoker pipelineInvoker, string workerName, ThreadWorkerSynchronizationContext threadWorkerSynchronizationContext, ParallelOperationsManager parallelOperationsManager, IBackoffStrategy backoffStrategy, IRebusLoggerFactory rebusLoggerFactory)
         {
             Name = workerName;
 
+            _log = rebusLoggerFactory.GetCurrentClassLogger();
             _transport = transport;
             _pipeline = pipeline;
             _pipelineInvoker = pipelineInvoker;
@@ -47,17 +44,9 @@ namespace Rebus.Workers.ThreadBased
             _workerThread = new Thread(ThreadStart)
             {
                 Name = workerName,
-                IsBackground = true
+                IsBackground = true,
             };
             _workerThread.Start();
-        }
-
-        /// <summary>
-        /// Disposes any unmanaged held resources
-        /// </summary>
-        ~ThreadWorker()
-        {
-            Dispose(false);
         }
 
         void ThreadStart()
@@ -133,7 +122,7 @@ namespace Rebus.Workers.ThreadBased
                     AmbientTransactionContext.Current = transactionContext;
                     try
                     {
-                        var message = await _transport.Receive(transactionContext);
+                        var message = await TryReceiveTransportMessage(transactionContext);
 
                         if (message == null)
                         {
@@ -147,12 +136,19 @@ namespace Rebus.Workers.ThreadBased
                         _backoffStrategy.Reset();
 
                         var context = new IncomingStepContext(message, transactionContext);
-                        
+
                         var stagedReceiveSteps = _pipeline.ReceivePipeline();
-                        
+
                         await _pipelineInvoker.Invoke(context, stagedReceiveSteps);
-                        
-                        await transactionContext.Complete();
+
+                        try
+                        {
+                            await transactionContext.Complete();
+                        }
+                        catch (Exception exception)
+                        {
+                            _log.Error(exception, "An error occurred when attempting to complete the transaction context");
+                        }
                     }
                     catch (Exception exception)
                     {
@@ -168,10 +164,26 @@ namespace Rebus.Workers.ThreadBased
             }
         }
 
+        async Task<TransportMessage> TryReceiveTransportMessage(DefaultTransactionContext transactionContext)
+        {
+            try
+            {
+                var message = await _transport.Receive(transactionContext);
+
+                return message;
+            }
+            catch (Exception exception)
+            {
+                _log.Warn("An error occurred when attempting to receive transport message: {0}", exception);
+
+                return null;
+            }
+        }
+
         /// <summary>
         /// Gets the name of this thread worker
         /// </summary>
-        public string Name { get; private set; }
+        public string Name { get; }
 
         /// <summary>
         /// Stops this thread worker
@@ -189,27 +201,15 @@ namespace Rebus.Workers.ThreadBased
         /// </summary>
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        /// Ensures that the worker thread is stopped and waits for it to exit
-        /// </summary>
-        protected virtual void Dispose(bool disposing)
-        {
             if (_disposed) return;
 
             try
             {
-                if (disposing)
-                {
-                    Stop();
+                Stop();
 
-                    if (!_workerThread.Join(TimeSpan.FromSeconds(5)))
-                    {
-                        _log.Warn("Worker {0} did not stop withing 5 second timeout!", Name);
-                    }
+                if (!_workerThread.Join(TimeSpan.FromSeconds(5)))
+                {
+                    _log.Warn("Worker {0} did not stop withing 5 second timeout!", Name);
                 }
             }
             finally

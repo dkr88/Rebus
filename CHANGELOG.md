@@ -678,14 +678,121 @@
 
 * Added ability to mark saga data as unchanged by calling `MarkAsUnchanged()` on the saga handler.
 
+## 0.99.0
+
+* Inject loggers. Will remove static logging things later.
+* Allow for enabling partitioning with Azure Service Bus transports
+* Changed Azure Service Bus transports to use streams as the message body to avoid silly XML-wrapping - thanks [meyce]
+* Updated WindowsAzure.ServiceBus dependency to 3.0.4
+* Updated WindowsAzure.Storage dependency to 6.0.0
+
+## 0.99.1
+
+* Added Serilog log event enricher + configuration extension for including Rebus' correlation ID in log events
+* Added custom NLog layout renderer that outputs the correlation ID of the message currently being handled in the `${rebus-correlation-id}` variable
+
+# 0.99.2
+
+* Fixed NLog nuget dependency
+
+# 0.99.3
+
+* Access to more useful information on `Failed<TMessage>`
+
+# 0.99.4
+
+* Added no-inlining jit directive to the Windsor package's `AutoRegisterHandlersFromThisAssembly` method because it looks like handlers are sometimes not picked up as they should
+
+# 0.99.5
+
+* Replaced Windsor's assembly-scanning with manual scan
+
+# 0.99.6
+
+* Set correlation ID, content type, and label properties on brokered messages with Azure Service Bus transport
+
+# 0.99.7
+
+* Limit length of header values used when using Azure Service Bus transport
+
+# 0.99.8
+
+* Fixed it so that delivery will not be retried indefinitely on commit exceptions
+
+# 0.99.9
+
+* Changed RabbitMQ routing to use two exchanges: one for direct addressing, and one for pub/sub messaging. This way, "clean" RabbitMQ topics can be subscribed to and then used when publishing, allowing for subscribing to topics using wildcards.
+
+# 0.99.10
+
+* Fixed nuspec on StructureMap package, made SimpleInjector package dependency version criteria more tolerant, and updated the Unity dependency to v 4
+
+# 0.99.11
+
+* Added ability to immediately forward messages on certain exception types (optionally when those exceptions satisfy some predicate)
+
+# 0.99.12
+
+* Added LightInject container adapter - thanks [puzsol]
+
+# 0.99.13
+
+* Added DryIoc container adapter - thanks [dadhi]
+
+# 0.99.14
+
+* General handling of receive errors by logging as warning
+
+# 0.99.15
+
+* Changed back to logging full exception details in the final ERROR log event
+
+# 0.99.16
+
+* Added `EnlistRebus` option to `Rebus.TransactionScopes`, allowing for easily enlisting an ambient Rebus transaction in an ambient .NET transaction
+
+# 0.99.17
+
+* Added `IBus` API overloads for `Subscribe` and `Unsubscribe` that accept a `Type` as a parameter - thanks [gertjvr]
+* Fixed `ExpiredMessagesCleanup` warning because of locked rows when handling message for a long time with the SQL Server transport
+* Introduced `rbs2-defer-recipient` header to designate the queue to deliver the message to when it returns - allows for doing request/reply with a defer in the middle without losing the return address (which must be transferred manually, though, unless you `bus.Advanced.TransportMessage.Defer`)
+* Crude attempt at allowing for sagas to resolve their conflicts by overriding `ResolveConflict`
+
+# 0.99.18
+
+* Fixed bug that would fail saga data auditing when the message could not be correlated with a saga data instance
+
+# 0.99.19
+
+* Fixed Rebus' SimpleInjector container adapter registrations to be able to resolve `IMessageContext` as part of the container's verification process
+
+# 0.99.20
+
+* Fixed bug in Amazon SQS transport that would silently ignore errors when sending messages - thanks [gertjvr]
+
+# 0.99.21
+
+* Small changes to Rebus' `TransactionScope` enlistment support
+
+# 0.99.22
+
+* Added RavenDB saga persister - thanks [bjomi]
+
+# 0.99.23
+
+* Fixed it so that SQL Server transport does not start the background "expired messages cleanup" task when it is a one-way client
+
 [AndreaCuneo]: https://github.com/AndreaCuneo
 [arneeiri]: https://github.com/arneeiri
 [bchavez]: https://github.com/bchavez
+[bjomi]: https://github.com/bjomi
 [caspertdk]: https://github.com/caspertdk
+[dadhi]: https://github.com/dadhi
 [dev4ce]: https://github.com/dev4ce
 [dimajanzen]: https://github.com/dimajanzen
 [DixonD-git]: https://github.com/DixonD-git
 [fritsduus]: https://github.com/fritsduus
+[gertjvr]: https://github.com/gertjvr
 [hagbarddenstore]: https://github.com/hagbarddenstore
 [jasperdk]: https://github.com/jasperdk
 [joshua5822]: https://github.com/joshua5822
@@ -694,12 +801,14 @@
 [maeserichar]: https://github.com/maeserichar
 [maxx1337]: https://github.com/maxx1337
 [mclausen]: https://github.com/mclausen
+[meyce]: https://github.com/Meyce
 [mgayeski]: https://github.com/mgayeski
 [mgibas]: https://github.com/mgibas
 [MrMDavidson]: https://github.com/MrMDavidson
 [oguzhaneren]: https://github.com/oguzhaneren
 [PeteProgrammer]: https://github.com/PeteProgrammer
 [pruiz]: https://github.com/pruiz
+[puzsol]: https://github.com/puzsol
 [seankearon]: https://github.com/seankearon
 [tiipe]: https://github.com/tiipe
 [tobiaxor]: https://github.com/tobiaxor

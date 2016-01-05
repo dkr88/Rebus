@@ -9,6 +9,7 @@ using Rebus.Handlers.Reordering;
 using Rebus.Pipeline;
 using Rebus.Routing.TransportMessages;
 using Rebus.Transport.InMem;
+#pragma warning disable 1998
 
 namespace Rebus.Tests.Pipeline
 {
@@ -33,7 +34,7 @@ namespace Rebus.Tests.Pipeline
                 .Options(o => o.SpecifyOrderOfHandlers()
                     .First<FirstHandler>()
                     .Then<SecondHandler>())
-                .Routing(r => r.AddTransportMessageForwarder(async TransportMessage =>
+                .Routing(r => r.AddTransportMessageForwarder(async transportMessage =>
                 {
                     if (_shouldAbortPipelineInTransportMessageRoutingFilter)
                     {
@@ -53,9 +54,9 @@ namespace Rebus.Tests.Pipeline
             _activator.Register(context => new FirstHandler(_events, context, false));
             _activator.Register(() => new SecondHandler(_events));
 
-            _activator.Bus.SendLocal("hej med dig!!!").Wait();
+            await _activator.Bus.SendLocal("hej med dig!!!");
 
-            await Task.Delay(500);
+            await Task.Delay(1000);
 
             Assert.That(_events.ToArray(), Is.EqualTo(new string[0]), "got {0}", string.Join(", ", _events));
         }
@@ -66,9 +67,9 @@ namespace Rebus.Tests.Pipeline
             _activator.Register(context => new FirstHandler(_events, context, true));
             _activator.Register(() => new SecondHandler(_events));
 
-            _activator.Bus.SendLocal("hej med dig!!!").Wait();
+            await _activator.Bus.SendLocal("hej med dig!!!");
 
-            await Task.Delay(500);
+            await Task.Delay(1000);
 
             Assert.That(_events.ToArray(), Is.EqualTo(new[] {"FirstHandler"}), "got {0}", string.Join(", ", _events));
         }
@@ -79,9 +80,9 @@ namespace Rebus.Tests.Pipeline
             _activator.Register(context => new FirstHandler(_events, context, false));
             _activator.Register(() => new SecondHandler(_events));
 
-            _activator.Bus.SendLocal("hej med dig!!!").Wait();
+            await _activator.Bus.SendLocal("hej med dig!!!");
 
-            await Task.Delay(500);
+            await Task.Delay(1000);
 
             Assert.That(_events.ToArray(), Is.EqualTo(new[] { "FirstHandler", "SecondHandler" }), "got {0}", string.Join(", ", _events));
         }
